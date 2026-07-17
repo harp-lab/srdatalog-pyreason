@@ -159,22 +159,27 @@ def _copy_columns(
   relation: str,
   columns: tuple[int, ...],
 ) -> tuple[int, dict[int, Any]]:
-  import cupy as cp  # type: ignore[import-not-found]
-
   count = int(lib.srdatalog_dev_count(relation.encode()))
   if count == 0:
     return count, {}
   result = {}
+  copy = lib.cudaMemcpy
+  copy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int]
+  copy.restype = ctypes.c_int
   for column in columns:
     pointer = int(lib.srdatalog_dev_ptr(relation.encode(), column))
-    memory = cp.cuda.UnownedMemory(pointer, count * 4, lib)
-    device = cp.ndarray(
-      (count,),
-      dtype=cp.uint32,
-      memptr=cp.cuda.MemoryPointer(memory, 0),
+    host = (ctypes.c_uint32 * count)()
+    status = copy(
+      ctypes.cast(host, ctypes.c_void_p),
+      ctypes.c_void_p(pointer),
+      ctypes.sizeof(host),
+      2,  # cudaMemcpyDeviceToHost
     )
-    result[column] = device.get()
-  cp.cuda.get_current_stream().synchronize()
+    if status != 0:
+      raise RuntimeError(
+        f'cudaMemcpy failed with status {status} while reading {relation}[{column}]'
+      )
+    result[column] = host
   return count, result
 
 
