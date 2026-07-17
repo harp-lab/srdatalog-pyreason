@@ -116,9 +116,13 @@ shim wiring needed.
 `srdatalog.pyreason` accepts a neutral `SourceProgram`; it has no built-in
 knowledge of application predicates or rule sets. The compatibility frontend
 preserves registered annotation callables as first-class source values. It
-compiles the original callback against the rule's clause metadata, while the
-SRDatalog compiler owns interval-column encoding and grouped-head expansion.
-No SRDatalog decorator or duplicate aggregate declaration is required.
+compiles the original callback against the rule's clause metadata directly
+into SRDatalog `Rule`, `ScalarExpr`, and grouped-head Core constructs. Python
+AST objects are transient frontend analysis only: there is no separate
+annotation AST or callback plan between PyReason and SRDatalog. The SRDatalog
+compiler owns interval-column encoding, scalar-expression lowering, and
+grouped-head expansion. No decorator or duplicate aggregate declaration is
+required.
 
 ## Running the bundled benchmarks
 

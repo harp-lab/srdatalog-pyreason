@@ -132,13 +132,18 @@ def _rewrite_clause(clause, consts: dict[str, int]):
   if isinstance(clause, Negation):
     return Negation(atom=_rewrite_atom(clause.atom, consts))
   if isinstance(clause, Filter):
-    return Filter(vars=clause.vars, code=_rewrite_cpp_code(clause.code, consts))
+    return Filter(
+      vars=clause.vars,
+      code=_rewrite_cpp_code(clause.code, consts),
+      expression=clause.expression,
+    )
   # Let / Agg / Split passthrough (add Let rewrite if it ever carries user cpp).
   if isinstance(clause, Let):
     return Let(
       var_name=clause.var_name,
       code=_rewrite_cpp_code(clause.code, consts),
       deps=clause.deps,
+      expression=clause.expression,
     )
   return clause
 
