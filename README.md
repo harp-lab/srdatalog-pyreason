@@ -111,25 +111,30 @@ The `extern "C"` shim (`srdatalog_init` / `load_all` / `run` / `size` /
 `shutdown`) is emitted automatically by `build_project` — no manual
 shim wiring needed.
 
-### Extending captured PyReason annotations
+### Declaring compilable PyReason annotations
 
 `srdatalog.pyreason` accepts a neutral `SourceProgram`; it has no built-in
-knowledge of application predicates or rule sets. Extended PyReason annotation
-callables can carry their own compiler plugin:
+knowledge of application predicates or rule sets. A Python annotation callable
+can carry a declarative grouped-aggregate expression:
 
 ```python
-from srdatalog.pyreason import register_annotation_rewriter
-
-register_annotation_rewriter(
-    annotation_function,
-    MyAnnotationRewriter(),
+from srdatalog.pyreason import (
+    annotation_semantics,
+    grouped_argmax_lower_of_minimum,
 )
+
+@annotation_semantics(
+    grouped_argmax_lower_of_minimum(0, 2, rank_clause=2)
+)
+def annotation_function(...):
+    ...
 ```
 
 The compatibility facade preserves the callable as a first-class source value.
-Rewrite selection, validation, native `Program` construction, data adaptation,
-and output decoding then occur entirely on the application side through this
-explicit compiler contract.
+The core compatibility compiler lowers this expression as a body join, a
+rule-local witness aggregate, and a distinct merge into the logical head
+relation. Unsupported callbacks fail capability checking; the compiler does
+not infer semantics from function or predicate names.
 
 ## Running the bundled benchmarks
 

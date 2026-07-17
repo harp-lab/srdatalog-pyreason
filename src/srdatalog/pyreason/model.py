@@ -22,8 +22,11 @@ class SourceRule:
   head_predicate: str
   head_terms: tuple[str, ...]
   head_annotation: str | None
+  head_lower: float
+  head_upper: float
   delay: int
   clauses: tuple[SourceClause, ...]
+  weights: tuple[float, ...] = ()
   infer_edges: bool = False
   set_static: bool = False
 
@@ -45,9 +48,9 @@ class SourceFact:
 class SourceProgram:
   '''Neutral capture of the public PyReason program state.
 
-  Annotation callables remain first-class Python objects.  This lets an
-  application register a compiler rewriter for its own extended annotation
-  semantics without teaching the compatibility facade application names.
+  Annotation callables remain first-class Python objects.  A callable may
+  carry a declarative annotation-semantics object; the core compatibility
+  compiler lowers that object without inspecting application names.
   '''
 
   rules: tuple[SourceRule, ...]

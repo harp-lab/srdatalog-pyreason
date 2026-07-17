@@ -9,6 +9,11 @@ identical between the warmup pass and the first real /reason call.
 """
 import numba
 
+from srdatalog.pyreason import (
+    annotation_semantics,
+    grouped_argmax_lower_of_minimum,
+)
+
 
 # Per-grounding paired ann fn for analyst rules. Recovers the (Lcause, Leffect)
 # pairing imposed by the connector clause (can_cause / contributes_to / derives /
@@ -19,6 +24,9 @@ import numba
 # dynamically as the edge clause whose two vars are both NOT head vars.
 # analystAt(CB1) and stepFrom(CB1, CB2) are excluded from the per-pair min: they
 # are gated by body thresholds upstream and equal [1,1] in the workflow.
+@annotation_semantics(
+    grouped_argmax_lower_of_minimum(1, 2, 3, rank_clause=3)
+)
 @numba.njit
 def paired_minimum_bounds_ann_fn(
     annotations, weights, qualified_nodes, qualified_edges, clause_labels, clause_variables
