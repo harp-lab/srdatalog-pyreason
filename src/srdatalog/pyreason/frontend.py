@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import importlib
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol
 
 from .model import ExecutionResult, NativePlan, SourceProgram
 
@@ -26,40 +24,6 @@ class AnnotationRewriter(Protocol):
     timesteps: int,
     output_root: str | Path,
   ) -> NativePlan: ...
-
-
-@dataclass(frozen=True)
-class LazyAnnotationRewriter:
-  '''Delay importing an application compiler plugin until rewrite selection.'''
-
-  module: str
-  attribute: str
-
-  @property
-  def name(self) -> str:
-    return f'{self.module}:{self.attribute}'
-
-  def _rewriter(self) -> AnnotationRewriter:
-    return cast(
-      AnnotationRewriter,
-      getattr(importlib.import_module(self.module), self.attribute),
-    )
-
-  def claims(self, source: SourceProgram) -> bool:
-    return self._rewriter().claims(source)
-
-  def rewrite(
-    self,
-    source: SourceProgram,
-    *,
-    timesteps: int,
-    output_root: str | Path,
-  ) -> NativePlan:
-    return self._rewriter().rewrite(
-      source,
-      timesteps=timesteps,
-      output_root=output_root,
-    )
 
 
 _REWRITER_ATTRIBUTE = '__srdatalog_annotation_rewriter__'

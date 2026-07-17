@@ -1,135 +1,125 @@
-import csv
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from minimal_vulreasoner.annotation_fn import paired_minimum_bounds_ann_fn
-from minimal_vulreasoner.example_config import (
-  END_TIME,
-  INITIAL_NODE,
-  KG_FILE,
-  RULES_FILE,
-  WORKFLOW,
-)
-from srdatalog.ir.hir import compile_to_hir
+from srdatalog import Program, Relation, Var, compile_to_hir
 from srdatalog.pyreason import (
+  NativePlan,
   RewriteRejected,
   SourceFact,
   SourceProgram,
   SourceRule,
+  register_annotation_rewriter,
   try_rewrite,
 )
 
 
-def _source(*, branch: bool = False, register_annotation: bool = True) -> SourceProgram:
-  with RULES_FILE.open(newline='') as handle:
-    rows = tuple(csv.DictReader(handle))
-  rules = tuple(
-    SourceRule(
-      text=row['rule_text'],
-      name=row['name'],
-      head_predicate='analystAt',
-      head_terms=('CB2',),
-      head_annotation='paired_minimum_bounds_ann_fn',
-      delay=1,
-      clauses=(),
-      infer_edges=True,
+def toy_annotation(*_args: object) -> tuple[float, float]:
+  return 1.0, 1.0
+
+
+class ToyRewriter:
+  name = 'test/toy-copy'
+
+  def claims(self, source: SourceProgram) -> bool:
+    return any(rule.head_annotation == toy_annotation.__name__ for rule in source.rules)
+
+  def rewrite(
+    self,
+    source: SourceProgram,
+    *,
+    timesteps: int,
+    output_root: str | Path,
+  ) -> NativePlan:
+    if timesteps < 0:
+      raise RewriteRejected('toy rewrite requires a finite horizon')
+    if any(rule.head_predicate != 'output' for rule in source.rules):
+      raise RewriteRejected('toy rewrite only accepts output heads')
+
+    item = Var('item')
+    input_relation = Relation('Input', 1)
+    output_relation = Relation('Output', 1)
+    program = Program(
+      rules=[
+        (output_relation(item) <= input_relation(item)).named('Copy'),
+      ]
     )
-    for row in rows
-  )
-  facts = [
-    SourceFact(
-      text=f'hasLabel({block},{label})',
-      name=f'label-{block}',
-      predicate='hasLabel',
-      arguments=(block, label),
-      lower=1.0,
-      upper=1.0,
-      start_time=0,
-      end_time=0,
-      static=True,
+    return NativePlan(
+      program=program,
+      project_name='ToyCopy',
+      data_dir=Path(output_root),
+      outputs=(),
+      symbol_names={},
+      rewriter=self.name,
     )
-    for block, label in WORKFLOW
-  ]
-  facts.append(
-    SourceFact(
-      text=f'analystAt({INITIAL_NODE})',
-      name='initial-control',
-      predicate='analystAt',
-      arguments=(INITIAL_NODE,),
-      lower=1.0,
-      upper=1.0,
-      start_time=0,
-      end_time=1,
-      static=False,
-    )
-  )
-  for index in range(len(WORKFLOW) - 1):
-    source, target = WORKFLOW[index][0], WORKFLOW[index + 1][0]
-    facts.append(
-      SourceFact(
-        text=f'stepFrom({source},{target})',
-        name=f'edge-{index}',
-        predicate='stepFrom',
-        arguments=(source, target),
-        lower=1.0,
-        upper=1.0,
-        start_time=index + 1,
-        end_time=index + 2,
-        static=False,
-      )
-    )
-  if branch:
-    facts.append(
-      SourceFact(
-        text='stepFrom(b1,b3)',
-        name='branch',
-        predicate='stepFrom',
-        arguments=('b1', 'b3'),
-        lower=1.0,
-        upper=1.0,
-        start_time=1,
-        end_time=2,
-        static=False,
-      )
-    )
-  annotations = (
-    (('paired_minimum_bounds_ann_fn', paired_minimum_bounds_ann_fn),)
-    if register_annotation
-    else ()
-  )
+
+
+REWRITER = ToyRewriter()
+register_annotation_rewriter(toy_annotation, REWRITER)
+
+
+def _source(*, annotation: object | None = toy_annotation) -> SourceProgram:
+  functions = () if annotation is None else ((toy_annotation.__name__, annotation),)
   return SourceProgram(
-    rules=rules,
-    facts=tuple(facts),
-    graphml_path=str(KG_FILE),
-    closed_world_predicates=frozenset({'analystAt'}),
-    annotation_functions=annotations,
+    rules=(
+      SourceRule(
+        text='output(x):toy_annotation <- input(x)',
+        name='copy',
+        head_predicate='output',
+        head_terms=('x',),
+        head_annotation=toy_annotation.__name__,
+        delay=0,
+        clauses=(),
+      ),
+    ),
+    facts=(
+      SourceFact(
+        text='input(a)',
+        name='seed',
+        predicate='input',
+        arguments=('a',),
+        lower=1.0,
+        upper=1.0,
+        start_time=0,
+        end_time=0,
+        static=True,
+      ),
+    ),
+    graphml_path=None,
+    closed_world_predicates=frozenset(),
+    annotation_functions=functions,
   )
 
 
-def test_annotation_owned_rewriter_lowers_to_candidate_program(tmp_path: Path) -> None:
-  plan = try_rewrite(_source(), timesteps=END_TIME, output_root=tmp_path)
+def test_registered_callable_selects_application_rewriter(tmp_path: Path) -> None:
+  plan = try_rewrite(_source(), timesteps=2, output_root=tmp_path)
+
   assert plan is not None
-  assert plan.rewriter == 'minimal-vulreasoner/paired-minimum-v1'
+  assert plan.rewriter == REWRITER.name
   hir = compile_to_hir(plan.program)
-  decls = {decl.rel_name: decl for decl in hir.relation_decls}
-  candidates = [decl for name, decl in decls.items() if name.endswith('Candidate')]
-  assert len(candidates) == 6
-  for decl in candidates:
-    assert decl.value_spec is not None
-    assert decl.value_spec.join.value == 'max-lower-select'
-  assert decls['AnalystAt'].value_spec is not None
-  assert decls['AnalystAt'].value_spec.join.value == 'interval-intersection'
+  assert [rule.name for stratum in hir.strata for rule in stratum.stratum_rules] == [
+    'Copy'
+  ]
 
 
-def test_unregistered_annotation_does_not_select_application_rewriter(tmp_path: Path) -> None:
+def test_unregistered_callable_does_not_select_rewriter(tmp_path: Path) -> None:
+  def unregistered_annotation(*_args: object) -> tuple[float, float]:
+    return 0.0, 1.0
+
   assert try_rewrite(
-    _source(register_annotation=False),
-    timesteps=END_TIME,
+    _source(annotation=unregistered_annotation),
+    timesteps=2,
     output_root=tmp_path,
   ) is None
 
 
-def test_claimed_near_miss_is_rejected_without_fallback(tmp_path: Path) -> None:
-  with pytest.raises(RewriteRejected, match='workflow branches'):
-    try_rewrite(_source(branch=True), timesteps=END_TIME, output_root=tmp_path)
+def test_claimed_invalid_source_is_rejected_without_fallback(tmp_path: Path) -> None:
+  invalid = _source()
+  invalid = replace(
+    invalid,
+    rules=(replace(invalid.rules[0], head_predicate='unsupported'),),
+  )
+
+  with pytest.raises(RewriteRejected, match='only accepts output heads'):
+    try_rewrite(invalid, timesteps=2, output_root=tmp_path)

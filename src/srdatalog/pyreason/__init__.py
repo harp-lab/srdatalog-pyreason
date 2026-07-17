@@ -2,7 +2,6 @@
 
 from .frontend import (
   AnnotationRewriter,
-  LazyAnnotationRewriter,
   RewriteRejected,
   register_annotation_rewriter,
   try_execute,
@@ -22,7 +21,6 @@ from .model import (
 __all__ = [
   'AnnotationRewriter',
   'ExecutionResult',
-  'LazyAnnotationRewriter',
   'NativePlan',
   'RewriteRejected',
   'SourceClause',

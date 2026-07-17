@@ -159,7 +159,7 @@ def _copy_columns(
   relation: str,
   columns: tuple[int, ...],
 ) -> tuple[int, dict[int, Any]]:
-  import cupy as cp
+  import cupy as cp  # type: ignore[import-not-found]
 
   count = int(lib.srdatalog_dev_count(relation.encode()))
   if count == 0:

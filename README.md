@@ -118,19 +118,18 @@ knowledge of application predicates or rule sets. Extended PyReason annotation
 callables can carry their own compiler plugin:
 
 ```python
-from srdatalog.pyreason import LazyAnnotationRewriter, register_annotation_rewriter
+from srdatalog.pyreason import register_annotation_rewriter
 
 register_annotation_rewriter(
     annotation_function,
-    LazyAnnotationRewriter("my_package.srdatalog_plugin", "REWRITER"),
+    MyAnnotationRewriter(),
 )
 ```
 
 The compatibility facade preserves the callable as a first-class source value.
 Rewrite selection, validation, native `Program` construction, data adaptation,
-and output decoding then occur entirely on the SRDatalog/application side. The
-bundled minimal VulReasoner example uses this boundary for its provenance-aware
-Candidate/interval rewrite.
+and output decoding then occur entirely on the application side through this
+explicit compiler contract.
 
 ## Running the bundled benchmarks
 
