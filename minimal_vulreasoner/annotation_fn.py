@@ -94,3 +94,17 @@ def paired_minimum_bounds_ann_fn(
     if lower > upper:
         return 0.0, 1.0
     return lower, upper
+
+
+# The extended annotation owns its compiler extension.  The PyReason facade
+# only preserves this callable as a first-class program value; it contains no
+# VulReasoner predicate, workflow, or aggregate knowledge.
+from srdatalog.pyreason import LazyAnnotationRewriter, register_annotation_rewriter
+
+_plugin_module = (
+    "minimal_vulreasoner.srdatalog_plugin" if __package__ else "srdatalog_plugin"
+)
+register_annotation_rewriter(
+    paired_minimum_bounds_ann_fn,
+    LazyAnnotationRewriter(_plugin_module, "REWRITER"),
+)

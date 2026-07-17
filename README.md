@@ -111,6 +111,27 @@ The `extern "C"` shim (`srdatalog_init` / `load_all` / `run` / `size` /
 `shutdown`) is emitted automatically by `build_project` — no manual
 shim wiring needed.
 
+### Extending captured PyReason annotations
+
+`srdatalog.pyreason` accepts a neutral `SourceProgram`; it has no built-in
+knowledge of application predicates or rule sets. Extended PyReason annotation
+callables can carry their own compiler plugin:
+
+```python
+from srdatalog.pyreason import LazyAnnotationRewriter, register_annotation_rewriter
+
+register_annotation_rewriter(
+    annotation_function,
+    LazyAnnotationRewriter("my_package.srdatalog_plugin", "REWRITER"),
+)
+```
+
+The compatibility facade preserves the callable as a first-class source value.
+Rewrite selection, validation, native `Program` construction, data adaptation,
+and output decoding then occur entirely on the SRDatalog/application side. The
+bundled minimal VulReasoner example uses this boundary for its provenance-aware
+Candidate/interval rewrite.
+
 ## Running the bundled benchmarks
 
 All 17 canonical benchmarks from the upstream `integration_tests/`
