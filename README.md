@@ -111,30 +111,14 @@ The `extern "C"` shim (`srdatalog_init` / `load_all` / `run` / `size` /
 `shutdown`) is emitted automatically by `build_project` — no manual
 shim wiring needed.
 
-### Declaring compilable PyReason annotations
+### Compiling PyReason annotations
 
 `srdatalog.pyreason` accepts a neutral `SourceProgram`; it has no built-in
-knowledge of application predicates or rule sets. A Python annotation callable
-can carry a declarative grouped-aggregate expression:
-
-```python
-from srdatalog.pyreason import (
-    annotation_semantics,
-    grouped_argmax_lower_of_minimum,
-)
-
-@annotation_semantics(
-    grouped_argmax_lower_of_minimum(0, 2, rank_clause=2)
-)
-def annotation_function(...):
-    ...
-```
-
-The compatibility facade preserves the callable as a first-class source value.
-The core compatibility compiler lowers this expression as a body join, a
-rule-local witness aggregate, and a distinct merge into the logical head
-relation. Unsupported callbacks fail capability checking; the compiler does
-not infer semantics from function or predicate names.
+knowledge of application predicates or rule sets. The compatibility frontend
+preserves registered annotation callables as first-class source values. It
+compiles the original callback against the rule's clause metadata, while the
+SRDatalog compiler owns interval-column encoding and grouped-head expansion.
+No SRDatalog decorator or duplicate aggregate declaration is required.
 
 ## Running the bundled benchmarks
 

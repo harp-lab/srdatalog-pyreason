@@ -359,6 +359,24 @@ class PlanEntry:
 
 
 @dataclass(frozen=True)
+class GroupedHeadAggregate:
+  '''Rule-local reduction over derivation witnesses sharing one head key.
+
+  The rule body first emits ``group_args + value_args`` into compiler-owned
+  aggregate state governed by ``value_spec``.  Only the selected/merged state
+  is then projected into the rule's declared logical head relation.
+  '''
+
+  group_args: tuple[ClauseArg, ...]
+  value_args: tuple[ClauseArg, ...]
+  value_spec: LatticeValueSpec
+  finalize_filters: tuple[Filter, ...] = ()
+
+  def __post_init__(self) -> None:
+    self.value_spec.validate(len(self.group_args) + len(self.value_args))
+
+
+@dataclass(frozen=True)
 class Rule:
   '''A Datalog rule: `head_1, head_2, ... :- body_1, body_2, ...`.
 
@@ -387,6 +405,7 @@ class Rule:
   # the lowering pass emits an InjectCppHook MIR node per variant (after
   # pipelines, before maintenance).
   debug_code: str = ""
+  grouped_head: GroupedHeadAggregate | None = None
 
   @property
   def head(self) -> Atom:
@@ -446,6 +465,23 @@ class Rule:
     `inject_cpp: "..."` rule pragma.
     '''
     return dataclasses.replace(self, debug_code=code)
+
+  def with_grouped_head(
+    self,
+    *,
+    group_args: tuple[object, ...] | list[object],
+    value_args: tuple[object, ...] | list[object],
+    value_spec: LatticeValueSpec,
+    finalize_filters: tuple[Filter, ...] | list[Filter] = (),
+  ) -> Rule:
+    '''Reduce derivation witnesses before merging into the logical head.'''
+    aggregate = GroupedHeadAggregate(
+      group_args=tuple(_coerce_arg(arg) for arg in group_args),
+      value_args=tuple(_coerce_arg(arg) for arg in value_args),
+      value_spec=value_spec,
+      finalize_filters=tuple(finalize_filters),
+    )
+    return dataclasses.replace(self, grouped_head=aggregate)
 
 
 class Relation:

@@ -1,53 +1,29 @@
-from dataclasses import replace
-
-import pytest
-
-from srdatalog.pyreason import (
-  ArgMaxLower,
-  ClauseLower,
-  ClauseUpper,
-  EndpointMinimum,
-  GroupedAnnotation,
-  WitnessInterval,
-  annotation_semantics,
-  get_annotation_semantics,
-  grouped_argmax_lower_of_minimum,
-  register_annotation_semantics,
-)
+from srdatalog.pyreason import SourceProgram, SourceRule
 
 
-def test_callable_carries_declarative_grouped_annotation() -> None:
-  semantics = grouped_argmax_lower_of_minimum(0, 2, rank_clause=2)
+def annotation(annotations, weights):
+  return annotations[0][0].lower, annotations[0][0].upper
 
-  @annotation_semantics(semantics)
-  def aggregate(*_args: object) -> tuple[float, float]:
-    return 1.0, 1.0
 
-  assert get_annotation_semantics(aggregate) is semantics
-  assert semantics == GroupedAnnotation(
-    witness=WitnessInterval(
-      lower=EndpointMinimum((ClauseLower(0), ClauseLower(2))),
-      upper=EndpointMinimum((ClauseUpper(0), ClauseUpper(2))),
-    ),
-    aggregate=ArgMaxLower(rank_clause=2),
+def test_source_program_preserves_plain_registered_callable() -> None:
+  rule = SourceRule(
+    text='output(x):annotation <- input(x)',
+    name='copy-bound',
+    head_predicate='output',
+    head_terms=('x',),
+    head_annotation='annotation',
+    head_lower=0.0,
+    head_upper=1.0,
+    delay=0,
+    clauses=(),
+  )
+  source = SourceProgram(
+    rules=(rule,),
+    facts=(),
+    graphml_path=None,
+    closed_world_predicates=frozenset(),
+    annotation_functions=(('annotation', annotation),),
   )
 
-
-def test_registration_is_idempotent_but_rejects_conflicts() -> None:
-  def aggregate(*_args: object) -> tuple[float, float]:
-    return 1.0, 1.0
-
-  first = grouped_argmax_lower_of_minimum(0, rank_clause=0)
-  register_annotation_semantics(aggregate, first)
-  register_annotation_semantics(aggregate, first)
-
-  with pytest.raises(ValueError, match='different SRDatalog semantics'):
-    register_annotation_semantics(
-      aggregate,
-      replace(first, aggregate=ArgMaxLower(rank_clause=1)),
-    )
-
-
-def test_grouped_minimum_requires_value_clause() -> None:
-  with pytest.raises(ValueError, match='at least one value clause'):
-    grouped_argmax_lower_of_minimum(rank_clause=0)
+  assert dict(source.annotation_functions)['annotation'] is annotation
+  assert not hasattr(annotation, '__srdatalog_annotation_semantics__')

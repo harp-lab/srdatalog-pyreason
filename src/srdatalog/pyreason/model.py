@@ -48,9 +48,9 @@ class SourceFact:
 class SourceProgram:
   '''Neutral capture of the public PyReason program state.
 
-  Annotation callables remain first-class Python objects.  A callable may
-  carry a declarative annotation-semantics object; the core compatibility
-  compiler lowers that object without inspecting application names.
+  Annotation callables remain first-class Python objects.  The compatibility
+  compiler derives their meaning from the callable and rule metadata; users do
+  not provide an SRDatalog-specific semantic duplicate.
   '''
 
   rules: tuple[SourceRule, ...]

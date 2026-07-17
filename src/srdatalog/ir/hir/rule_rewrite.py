@@ -28,6 +28,86 @@ from srdatalog.ir.hir.provenance import compiler_gen
 from srdatalog.ir.hir.types import RelationDecl
 
 
+def _aggregate_arg_type(
+  arg: ClauseArg,
+  rule: Rule,
+  decls: list[RelationDecl],
+) -> str:
+  if arg.kind is not ArgKind.LVAR or arg.var_name is None:
+    return "int"
+  declarations = {decl.rel_name: decl for decl in decls}
+  for clause in rule.body:
+    atom = clause if isinstance(clause, Atom) else None
+    if atom is None or atom.rel not in declarations:
+      continue
+    for column, candidate in enumerate(atom.args):
+      if candidate.kind is ArgKind.LVAR and candidate.var_name == arg.var_name:
+        types = declarations[atom.rel].types
+        return types[column] if column < len(types) else "int"
+  return "int"
+
+
+def expand_grouped_heads(
+  rules: list[Rule],
+  decls: list[RelationDecl],
+) -> tuple[list[Rule], list[RelationDecl]]:
+  '''Elaborate a generic grouped head into producer state plus projection.'''
+  existing = {decl.rel_name for decl in decls}
+  expanded: list[Rule] = []
+  generated_decls: list[RelationDecl] = []
+  counter = 0
+  for rule in rules:
+    aggregate = rule.grouped_head
+    if aggregate is None:
+      expanded.append(rule)
+      continue
+    if len(rule.heads) != 1:
+      raise ValueError("grouped head aggregation requires exactly one logical head")
+    parent_name = rule.name or f"rule_{counter}"
+    while True:
+      relation_name = f"__grouped_head_{counter}"
+      counter += 1
+      if relation_name not in existing:
+        break
+    existing.add(relation_name)
+    aggregate_args = aggregate.group_args + aggregate.value_args
+    aggregate_atom = Atom(rel=relation_name, args=aggregate_args)
+    provenance = compiler_gen(
+      parent_rule=parent_name,
+      derived_from=parent_name,
+      transform_pass="GroupedHeadExpansion",
+    )
+    producer = dataclasses.replace(
+      rule,
+      heads=(aggregate_atom,),
+      name=f"{parent_name}__group",
+      grouped_head=None,
+      is_generated=True,
+      prov=provenance,
+    )
+    projection = Rule(
+      heads=rule.heads,
+      body=(aggregate_atom, *aggregate.finalize_filters),
+      name=f"{parent_name}__project",
+      is_generated=True,
+      prov=provenance,
+    )
+    expanded.extend((producer, projection))
+    generated_decls.append(
+      RelationDecl(
+        rel_name=relation_name,
+        types=[
+          _aggregate_arg_type(arg, rule, decls) for arg in aggregate_args
+        ],
+        semiring="NoProvenance",
+        is_generated=True,
+        is_temp=True,
+        value_spec=aggregate.value_spec,
+      )
+    )
+  return expanded, [*decls, *generated_decls]
+
+
 def _atom_has_const(atom: Atom) -> bool:
   return any(a.kind is ArgKind.CONST for a in atom.args)
 
@@ -164,6 +244,19 @@ class WildcardRewritePass:
 
   def run(self, rules, decls):
     return rewrite_wildcards(rules, decls)
+
+
+class GroupedHeadExpansionPass:
+  info = PassInfo(
+    name="GroupedHeadExpansion",
+    level=PassLevel.RULE_REWRITE,
+    order=-2,
+    source_dialect=IRLevel.HIR,
+    target_dialect=IRLevel.HIR,
+  )
+
+  def run(self, rules, decls):
+    return expand_grouped_heads(rules, decls)
 
 
 class ConstantRewritePass:
