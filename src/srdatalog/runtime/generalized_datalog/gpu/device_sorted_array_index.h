@@ -533,7 +533,8 @@ class DeviceSortedArrayIndex {
   ///          followed by lower and upper float32-bit columns, joined by
   ///          interval intersection. With true, the value layout is rank,
   ///          lower, upper and the greatest lower wins, with minimum rank as
-  ///          the deterministic tie breaker.
+  ///          the deterministic tie breaker and minimum upper for the same
+  ///          lower/rank logical witness version.
   template <std::size_t KeyArity, bool SelectMaxLower>
   void pair_lattice_merge_update(const IndexSpec& spec,
                                  DeviceSortedArrayIndex& full_idx,

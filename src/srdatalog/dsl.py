@@ -95,6 +95,19 @@ class ScalarMax(ScalarExpr):
 
 
 @dataclass(frozen=True)
+class ScalarFloat32Sub(ScalarExpr):
+  '''Subtract values stored as IEEE-754 float32 bit patterns.
+
+  SRDatalog relations physically carry 32-bit words.  This operation makes
+  the decode/compute/re-encode boundary explicit instead of accidentally
+  applying integer arithmetic to encoded probabilities.
+  '''
+
+  left: ScalarExpr
+  right: ScalarExpr
+
+
+@dataclass(frozen=True)
 class ScalarCompare(ScalarExpr):
   operator: Literal['==', '!=', '<', '<=', '>', '>=']
   left: ScalarExpr
@@ -108,6 +121,15 @@ class ScalarAnd(ScalarExpr):
   def __post_init__(self) -> None:
     if not self.arguments:
       raise ValueError('ScalarAnd requires at least one argument')
+
+
+@dataclass(frozen=True)
+class ScalarOr(ScalarExpr):
+  arguments: tuple[ScalarExpr, ...]
+
+  def __post_init__(self) -> None:
+    if not self.arguments:
+      raise ValueError('ScalarOr requires at least one argument')
 
 
 def scalar_dependencies(expression: ScalarExpr) -> tuple[str, ...]:
@@ -124,13 +146,15 @@ def scalar_dependencies(expression: ScalarExpr) -> tuple[str, ...]:
         for dependency in scalar_dependencies(argument)
       )
     )
+  if isinstance(expression, ScalarFloat32Sub):
+    return tuple(
+      dict.fromkeys((*scalar_dependencies(expression.left), *scalar_dependencies(expression.right)))
+    )
   if isinstance(expression, ScalarCompare):
     return tuple(
-      dict.fromkeys(
-        (*scalar_dependencies(expression.left), *scalar_dependencies(expression.right))
-      )
+      dict.fromkeys((*scalar_dependencies(expression.left), *scalar_dependencies(expression.right)))
     )
-  if isinstance(expression, ScalarAnd):
+  if isinstance(expression, (ScalarAnd, ScalarOr)):
     return tuple(
       dict.fromkeys(
         dependency
@@ -154,13 +178,18 @@ def render_scalar(expression: ScalarExpr) -> str:
     for argument in arguments[1:]:
       result = f'{function}({result}, {argument})'
     return result
+  if isinstance(expression, ScalarFloat32Sub):
+    left = render_scalar(expression.left)
+    right = render_scalar(expression.right)
+    return f'__float_as_uint(__uint_as_float({left}) - __uint_as_float({right}))'
   if isinstance(expression, ScalarCompare):
     return (
-      f'{render_scalar(expression.left)} {expression.operator} '
-      f'{render_scalar(expression.right)}'
+      f'{render_scalar(expression.left)} {expression.operator} {render_scalar(expression.right)}'
     )
   if isinstance(expression, ScalarAnd):
     return ' && '.join(f'({render_scalar(argument)})' for argument in expression.arguments)
+  if isinstance(expression, ScalarOr):
+    return ' || '.join(f'({render_scalar(argument)})' for argument in expression.arguments)
   raise TypeError(f'unsupported scalar expression {type(expression).__name__}')
 
 

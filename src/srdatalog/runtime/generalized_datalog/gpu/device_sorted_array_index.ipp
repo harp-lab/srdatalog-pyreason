@@ -82,10 +82,17 @@ struct MaxLowerFirstRankTuple {
     const ValueType left_lower = thrust::get<1>(left);
     const ValueType right_rank = thrust::get<0>(right);
     const ValueType right_lower = thrust::get<1>(right);
-    return right_lower > left_lower ||
-                   (right_lower == left_lower && right_rank < left_rank)
-               ? right
-               : left;
+    if (right_lower > left_lower ||
+        (right_lower == left_lower && right_rank < left_rank)) {
+      return right;
+    }
+    if (right_lower < left_lower || right_rank != left_rank) {
+      return left;
+    }
+    const ValueType upper = thrust::get<2>(left) < thrust::get<2>(right)
+                                ? thrust::get<2>(left)
+                                : thrust::get<2>(right);
+    return thrust::make_tuple(left_rank, left_lower, upper);
   }
 };
 
@@ -174,6 +181,9 @@ __global__ void pair_lattice_probe_update_kernel(
     joined_rank = select_new ? new_rank : old_rank;
     joined_lower = select_new ? new_lower : old_lower;
     joined_upper = select_new ? new_upper : old_upper;
+    if (new_lower == old_lower && new_rank == old_rank) {
+      joined_upper = new_upper < old_upper ? new_upper : old_upper;
+    }
   } else {
     joined_lower = old_lower > new_lower ? old_lower : new_lower;
     joined_upper = old_upper < new_upper ? old_upper : new_upper;
