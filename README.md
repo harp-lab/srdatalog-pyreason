@@ -111,6 +111,74 @@ The `extern "C"` shim (`srdatalog_init` / `load_all` / `run` / `size` /
 `shutdown`) is emitted automatically by `build_project` — no manual
 shim wiring needed.
 
+### Compiling PyReason annotations
+
+`srdatalog.pyreason` accepts a neutral `SourceProgram`; it has no built-in
+knowledge of application predicates or rule sets. The compatibility frontend
+preserves registered annotation callables as first-class source values. It
+compiles the original callback against the rule's clause metadata directly
+into SRDatalog `Rule`, `ScalarExpr`, and grouped-head Core constructs. Python
+AST objects are transient frontend analysis only: there is no separate
+annotation AST or callback plan between PyReason and SRDatalog. The SRDatalog
+compiler owns interval-column encoding, scalar-expression lowering, and
+grouped-head expansion. No decorator or duplicate aggregate declaration is
+required.
+
+Extended callbacks expose an implicit collection identity: item `k` in
+`qualified_edges[i]` is paired with item `k` in `annotations[i]`, and a Python
+`break` observes that collection order. The lowering reifies the stable part as
+the logical tuple key plus a predicate-map admission rank; it never uses a
+physical GPU row ID. A supported maximum callback is staged through ordinary
+`ProposalCandidate`, lattice-valued `SelectedProposal`, post-winner
+`EffectiveProposal`, and finally the interval-valued logical head. Crossed
+winner fallback therefore happens after selection, and different source rules
+still meet only in the logical head.
+
+Candidate endpoint expressions must be monotone in interval knowledge: the
+selected lower may depend on source lower endpoints and the selected upper on
+source upper endpoints. Extra body bindings are retained as logical witness
+columns. If two distinct bindings give one admission rank divergent payloads,
+the runtime rejects the execution; exact support for a nested Python
+first-match scan requires another staged `ARG MIN(admission rank)` lookup before
+the outer `ARG MAX`, not an arbitrary storage tuple ID.
+
+The accepted control-flow fragment is deliberately exact: selection guards are
+either `candidate > accumulator` or
+`not found_any or candidate > accumulator`, without extra conditions or an
+`else`; aligned first-match lookups and the final selected `lower > upper`
+fallback are separately recognized. Repeated dynamic loops over one source
+clause are rejected until the lowering has explicit self-join occurrences.
+PyReason repairs a crossed interval to `[0,1]` before a later callback reads it;
+the runtime rejects such an execution until callbacks have a snapshot-local
+repaired read view. Signed zero is canonicalized to positive zero before the
+unsigned float-bit ordering is used.
+
+Ordinary PyReason materialization uses `NoProvenance`. A later explanation
+request can pass grounded `DemandSeed` values to `replay_demands`: the frontend
+performs a bound/free backward rewrite, instruments only reachable source-rule
+occurrences with ordinary set-valued witness relations, and reruns the program.
+Each logical witness stores the grounded head/time, candidate interval,
+variable bindings, and observed body interval versions. This retains transient
+closed-world and pre-conflict evidence without semiring annotations or physical
+GPU tuple IDs. The current implemented fragment covers logical why-witnesses
+for ordinary constant-head rules; it does not reproduce PyReason's global
+fixed-point operation numbers or filter those witnesses down to only the
+head-changing update events. The compatibility layer therefore rejects exact
+`get_rule_trace` requests instead of synthesizing old bounds or operation
+numbers. A demand that reaches a Python callback is
+rejected: PyReason records one state-changing aggregate event with the complete
+same-snapshot group, which cannot be reconstructed from accumulated raw
+candidates or a final winner.
+
+Closed-world compilation also preserves PyReason's predicate-map grounding
+domain when that domain is determined by facts, and rejects a rule-created
+first label over a multi-element domain. It also rejects callback or constant
+`[0,1]` heads that could add a predicate-map key without narrowing the interval.
+Partially bound binary clauses range over graph neighbors, as in PyReason, and
+do not consult that map. IPL declarations are captured but
+rejected by native compilation until their direct, one-hop mate update can
+co-commit with the primary update.
+
 ## Running the bundled benchmarks
 
 All 17 canonical benchmarks from the upstream `integration_tests/`

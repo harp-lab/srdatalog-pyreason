@@ -36,7 +36,20 @@ See README + examples/triangle.py.
 # DSL
 # One-shot end-to-end builder (the recommended entry point)
 from srdatalog.build import build_project
-from srdatalog.dsl import Program, Relation, Var
+from srdatalog.dsl import (
+  Program,
+  Relation,
+  ScalarAnd,
+  ScalarCompare,
+  ScalarConst,
+  ScalarExpr,
+  ScalarFloat32Sub,
+  ScalarMax,
+  ScalarMin,
+  ScalarOr,
+  ScalarVar,
+  Var,
+)
 from srdatalog.ir.codegen.cuda.build.cache import write_jit_project
 
 # Compile + link via the bundled compiler wrapper
@@ -85,6 +98,15 @@ __all__ = [
   "Var",
   "Relation",
   "Program",
+  "ScalarExpr",
+  "ScalarFloat32Sub",
+  "ScalarAnd",
+  "ScalarVar",
+  "ScalarConst",
+  "ScalarMin",
+  "ScalarMax",
+  "ScalarOr",
+  "ScalarCompare",
   "LatticeJoin",
   "LatticeValueSpec",
   "ValueEncoding",

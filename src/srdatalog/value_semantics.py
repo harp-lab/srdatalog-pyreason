@@ -87,9 +87,9 @@ def max_lower_lattice(
   '''Declare materialized state for a grouped maximum-lower witness aggregate.
 
   The greatest lower bound wins; minimum stable rank resolves an exact lower
-  tie.  Rank is a witness identity/tie-break key, not an evidence score.  For
-  the selection to be a deterministic join, ``key + rank`` must identify one
-  interval payload.
+  tie. For the same lower and rank, upper bounds meet by minimum so a logical
+  witness can evolve as its interval narrows. Rank is a logical witness
+  identity/tie-break key, not an evidence score or physical tuple ID.
   '''
   return LatticeValueSpec(
     key_columns=tuple(key_columns),
@@ -103,11 +103,14 @@ def float32_to_u32(value: float) -> int:
   '''Bit-cast a probability bound to an unsigned integer of the same size.'''
   if not 0.0 <= value <= 1.0:
     raise ValueError(f"interval bound must be in [0,1], got {value}")
-  return struct.unpack("<I", struct.pack("<f", value))[0]
+  if value == 0.0:
+    value = 0.0
+  return int(struct.unpack("<I", struct.pack("<f", value))[0])
 
 
 def u32_to_float32(bits: int) -> float:
   '''Invert :func:`float32_to_u32`.'''
   if not 0 <= bits <= 0xFFFFFFFF:
     raise ValueError(f"float32 bit pattern must fit uint32, got {bits}")
-  return struct.unpack("<f", struct.pack("<I", bits))[0]
+  value = float(struct.unpack("<f", struct.pack("<I", bits))[0])
+  return 0.0 if value == 0.0 else value

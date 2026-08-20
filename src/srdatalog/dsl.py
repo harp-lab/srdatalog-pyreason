@@ -21,7 +21,7 @@ import dataclasses
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Union
+from typing import Literal, Union
 
 from srdatalog.ir.hir.provenance import USER_PROVENANCE, Provenance
 from srdatalog.value_semantics import LatticeValueSpec
@@ -60,6 +60,137 @@ class Var:
 
   def _to_arg(self) -> ClauseArg:
     return ClauseArg(kind=ArgKind.LVAR, var_name=self.name)
+
+
+class ScalarExpr:
+  '''Typed scalar expression carried by SRDatalog Core until MIR lowering.'''
+
+
+@dataclass(frozen=True)
+class ScalarVar(ScalarExpr):
+  name: str
+
+
+@dataclass(frozen=True)
+class ScalarConst(ScalarExpr):
+  value: int
+
+
+@dataclass(frozen=True)
+class ScalarMin(ScalarExpr):
+  arguments: tuple[ScalarExpr, ...]
+
+  def __post_init__(self) -> None:
+    if not self.arguments:
+      raise ValueError('ScalarMin requires at least one argument')
+
+
+@dataclass(frozen=True)
+class ScalarMax(ScalarExpr):
+  arguments: tuple[ScalarExpr, ...]
+
+  def __post_init__(self) -> None:
+    if not self.arguments:
+      raise ValueError('ScalarMax requires at least one argument')
+
+
+@dataclass(frozen=True)
+class ScalarFloat32Sub(ScalarExpr):
+  '''Subtract values stored as IEEE-754 float32 bit patterns.
+
+  SRDatalog relations physically carry 32-bit words.  This operation makes
+  the decode/compute/re-encode boundary explicit instead of accidentally
+  applying integer arithmetic to encoded probabilities.
+  '''
+
+  left: ScalarExpr
+  right: ScalarExpr
+
+
+@dataclass(frozen=True)
+class ScalarCompare(ScalarExpr):
+  operator: Literal['==', '!=', '<', '<=', '>', '>=']
+  left: ScalarExpr
+  right: ScalarExpr
+
+
+@dataclass(frozen=True)
+class ScalarAnd(ScalarExpr):
+  arguments: tuple[ScalarExpr, ...]
+
+  def __post_init__(self) -> None:
+    if not self.arguments:
+      raise ValueError('ScalarAnd requires at least one argument')
+
+
+@dataclass(frozen=True)
+class ScalarOr(ScalarExpr):
+  arguments: tuple[ScalarExpr, ...]
+
+  def __post_init__(self) -> None:
+    if not self.arguments:
+      raise ValueError('ScalarOr requires at least one argument')
+
+
+def scalar_dependencies(expression: ScalarExpr) -> tuple[str, ...]:
+  '''Return referenced variables in stable first-use order.'''
+  if isinstance(expression, ScalarVar):
+    return (expression.name,)
+  if isinstance(expression, ScalarConst):
+    return ()
+  if isinstance(expression, (ScalarMin, ScalarMax)):
+    return tuple(
+      dict.fromkeys(
+        dependency
+        for argument in expression.arguments
+        for dependency in scalar_dependencies(argument)
+      )
+    )
+  if isinstance(expression, ScalarFloat32Sub):
+    return tuple(
+      dict.fromkeys((*scalar_dependencies(expression.left), *scalar_dependencies(expression.right)))
+    )
+  if isinstance(expression, ScalarCompare):
+    return tuple(
+      dict.fromkeys((*scalar_dependencies(expression.left), *scalar_dependencies(expression.right)))
+    )
+  if isinstance(expression, (ScalarAnd, ScalarOr)):
+    return tuple(
+      dict.fromkeys(
+        dependency
+        for argument in expression.arguments
+        for dependency in scalar_dependencies(argument)
+      )
+    )
+  raise TypeError(f'unsupported scalar expression {type(expression).__name__}')
+
+
+def render_scalar(expression: ScalarExpr) -> str:
+  '''Lower one typed Core scalar expression to its C++ representation.'''
+  if isinstance(expression, ScalarVar):
+    return expression.name
+  if isinstance(expression, ScalarConst):
+    return str(expression.value)
+  if isinstance(expression, (ScalarMin, ScalarMax)):
+    function = 'std::min' if isinstance(expression, ScalarMin) else 'std::max'
+    arguments = [render_scalar(argument) for argument in expression.arguments]
+    result = arguments[0]
+    for argument in arguments[1:]:
+      result = f'{function}({result}, {argument})'
+    return result
+  if isinstance(expression, ScalarFloat32Sub):
+    left = render_scalar(expression.left)
+    right = render_scalar(expression.right)
+    return f'__float_as_uint(__uint_as_float({left}) - __uint_as_float({right}))'
+  if isinstance(expression, ScalarCompare):
+    return (
+      f'{render_scalar(expression.left)} {expression.operator} {render_scalar(expression.right)}'
+    )
+  if isinstance(expression, ScalarAnd):
+    return ' && '.join(f'({render_scalar(argument)})' for argument in expression.arguments)
+  if isinstance(expression, ScalarOr):
+    return ' || '.join(f'({render_scalar(argument)})' for argument in expression.arguments)
+  raise TypeError(f'unsupported scalar expression {type(expression).__name__}')
 
 
 class Const:
@@ -210,8 +341,23 @@ class Filter:
   DSL too.
   '''
 
-  vars: tuple[str, ...]
-  code: str
+  vars: tuple[str, ...] = ()
+  code: str = ''
+  expression: ScalarExpr | None = None
+
+  def __post_init__(self) -> None:
+    if self.expression is None:
+      if not self.code:
+        raise ValueError('Filter requires code or a typed scalar expression')
+      return
+    if self.code:
+      raise ValueError('Filter cannot contain both code and a typed scalar expression')
+    dependencies = scalar_dependencies(self.expression)
+    if self.vars and self.vars != dependencies:
+      raise ValueError(
+        f'Filter vars {self.vars!r} do not match expression dependencies {dependencies!r}'
+      )
+    object.__setattr__(self, 'vars', dependencies)
 
   def __and__(self, other: BodyClauseT | Conjunction) -> Conjunction:
     if isinstance(other, Conjunction):
@@ -228,8 +374,23 @@ class Let:
   '''
 
   var_name: str
-  code: str
+  code: str = ''
   deps: tuple[str, ...] = ()
+  expression: ScalarExpr | None = None
+
+  def __post_init__(self) -> None:
+    if self.expression is None:
+      if not self.code:
+        raise ValueError('Let requires code or a typed scalar expression')
+      return
+    if self.code:
+      raise ValueError('Let cannot contain both code and a typed scalar expression')
+    dependencies = scalar_dependencies(self.expression)
+    if self.deps and self.deps != dependencies:
+      raise ValueError(
+        f'Let deps {self.deps!r} do not match expression dependencies {dependencies!r}'
+      )
+    object.__setattr__(self, 'deps', dependencies)
 
   def __and__(self, other: BodyClauseT | Conjunction) -> Conjunction:
     if isinstance(other, Conjunction):
@@ -359,6 +520,24 @@ class PlanEntry:
 
 
 @dataclass(frozen=True)
+class GroupedHeadAggregate:
+  '''Rule-local reduction over derivation witnesses sharing one head key.
+
+  The rule body first emits ``group_args + value_args`` into compiler-owned
+  aggregate state governed by ``value_spec``.  Only the selected/merged state
+  is then projected into the rule's declared logical head relation.
+  '''
+
+  group_args: tuple[ClauseArg, ...]
+  value_args: tuple[ClauseArg, ...]
+  value_spec: LatticeValueSpec
+  finalize_filters: tuple[Filter, ...] = ()
+
+  def __post_init__(self) -> None:
+    self.value_spec.validate(len(self.group_args) + len(self.value_args))
+
+
+@dataclass(frozen=True)
 class Rule:
   '''A Datalog rule: `head_1, head_2, ... :- body_1, body_2, ...`.
 
@@ -387,6 +566,7 @@ class Rule:
   # the lowering pass emits an InjectCppHook MIR node per variant (after
   # pipelines, before maintenance).
   debug_code: str = ""
+  grouped_head: GroupedHeadAggregate | None = None
 
   @property
   def head(self) -> Atom:
@@ -446,6 +626,23 @@ class Rule:
     `inject_cpp: "..."` rule pragma.
     '''
     return dataclasses.replace(self, debug_code=code)
+
+  def with_grouped_head(
+    self,
+    *,
+    group_args: tuple[object, ...] | list[object],
+    value_args: tuple[object, ...] | list[object],
+    value_spec: LatticeValueSpec,
+    finalize_filters: tuple[Filter, ...] | list[Filter] = (),
+  ) -> Rule:
+    '''Reduce derivation witnesses before merging into the logical head.'''
+    aggregate = GroupedHeadAggregate(
+      group_args=tuple(_coerce_arg(arg) for arg in group_args),
+      value_args=tuple(_coerce_arg(arg) for arg in value_args),
+      value_spec=value_spec,
+      finalize_filters=tuple(finalize_filters),
+    )
+    return dataclasses.replace(self, grouped_head=aggregate)
 
 
 class Relation:

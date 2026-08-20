@@ -21,7 +21,7 @@ Deliberately NOT ported (no Python DSL equivalent or deferred optimization):
 from __future__ import annotations
 
 import srdatalog.ir.mir.types as mir
-from srdatalog.dsl import ArgKind, Atom, Filter, Let
+from srdatalog.dsl import ArgKind, Atom, Filter, Let, render_scalar
 from srdatalog.ir.hir.index import complete_index, get_arity
 from srdatalog.ir.hir.types import (
   AccessPattern,
@@ -249,12 +249,13 @@ def _lower_filter_and_let_clauses(variant: HirRuleVariant) -> list[mir.MirNode]:
   out: list[mir.MirNode] = []
   for b in variant.original_rule.body:
     if isinstance(b, Filter):
-      out.append(mir.Filter(vars=list(b.vars), code=b.code))
+      code = b.code if b.expression is None else f'return {render_scalar(b.expression)};'
+      out.append(mir.Filter(vars=list(b.vars), code=code))
     elif isinstance(b, Let):
       out.append(
         mir.ConstantBind(
           var_name=b.var_name,
-          code=b.code,
+          code=b.code if b.expression is None else render_scalar(b.expression),
           deps=list(b.deps),
         )
       )
@@ -267,12 +268,13 @@ def _lower_above_filter_and_let(variant: HirRuleVariant) -> list[mir.MirNode]:
   for i in range(variant.split_at):
     b = variant.original_rule.body[i]
     if isinstance(b, Filter):
-      out.append(mir.Filter(vars=list(b.vars), code=b.code))
+      code = b.code if b.expression is None else f'return {render_scalar(b.expression)};'
+      out.append(mir.Filter(vars=list(b.vars), code=code))
     elif isinstance(b, Let):
       out.append(
         mir.ConstantBind(
           var_name=b.var_name,
-          code=b.code,
+          code=b.code if b.expression is None else render_scalar(b.expression),
           deps=list(b.deps),
         )
       )
@@ -285,12 +287,13 @@ def _lower_below_filter_and_let(variant: HirRuleVariant) -> list[mir.MirNode]:
   for i in range(variant.split_at + 1, len(variant.original_rule.body)):
     b = variant.original_rule.body[i]
     if isinstance(b, Filter):
-      out.append(mir.Filter(vars=list(b.vars), code=b.code))
+      code = b.code if b.expression is None else f'return {render_scalar(b.expression)};'
+      out.append(mir.Filter(vars=list(b.vars), code=code))
     elif isinstance(b, Let):
       out.append(
         mir.ConstantBind(
           var_name=b.var_name,
-          code=b.code,
+          code=b.code if b.expression is None else render_scalar(b.expression),
           deps=list(b.deps),
         )
       )

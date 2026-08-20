@@ -12,6 +12,7 @@ sampling, multi-KG, trace-filtering, and result-schema machinery in
 | `run_minimal_reasoner.py` | The example. Loads the KG, one ruleset, the annotation fn, facts, and runs the fixpoint. |
 | `run_srdatalog_reasoner.py` | Runs those same inputs through SRDatalog and prints every temporal `AnalystAt` result. |
 | `validate_minimal_parity.py` | Runs both engines and compares their complete temporal result maps. |
+| `CONVERSION_REPORT.md` | Concise conversion, validation, and unsupported-case status report. |
 | `graphml_ingest.py` | Streaming, PyReason-compatible GraphML-to-relation adapter. |
 | `analyst_rule_loader.py` | Parser for the constrained six-rule analyst CSV shape. |
 | `srdatalog_query.py` | The same six delayed analyst rules encoded in the SRDatalog DSL. |
@@ -41,8 +42,8 @@ name separately.  The mapping used by the SRDatalog port is:
 | PyReason term | Database/provenance term |
 |---|---|
 | satisfied or grounded rule body | join result; one derivation witness for the head |
-| `qualified_nodes` / `qualified_edges` | the supporting input tuples belonging to each witness |
-| body `annotations` | interval-valued payloads carried by those input tuples |
+| `qualified_nodes` / `qualified_edges` | ordered per-clause logical tuple collections for one head grounding |
+| body `annotations` | index-aligned interval payloads (`annotations[i][k]` belongs to qualified item `k`) |
 | head annotation function | user-defined grouped aggregate over the witnesses for one rule and head key |
 | `paired_minimum_bounds_ann_fn` | rule-local `ARG MAX` by lower bound, carrying the winning witness's interval |
 | rule trace | explanation graph / why-provenance trace |
@@ -57,6 +58,23 @@ all alternative supporting derivations, whereas the callback deliberately
 keeps one maximum-scoring witness.  The parity encoding retains its stable rank
 and interval, but does not currently materialize a complete provenance
 polynomial.
+
+The retained connector rank is a logical selection/tie-break key, not a
+provenance variable or physical tuple ID. PyReason's `break` also makes nested
+lookup order observable: in general the callback performs
+`ARG MIN(admission rank)` for each first-match lookup and then the outer
+`ARG MAX(lower, -driver rank)`. The supplied graph has a unique or
+equal-payload lookup for each driver. The generic compiler retains extra body
+bindings and rejects an execution if one driver rank receives divergent
+payloads; fully general nested first-match lowering needs another staged
+aggregate, not row-ID provenance.
+
+The compiler recognizes only the exact callback control flow used here. It
+does not discard extra Python guards or `else` branches, and it rejects a
+callback read of a crossed interval because PyReason exposes the repaired
+`[0,1]` snapshot whereas the monotone native relation retains crossed internal
+endpoints. These are explicit compatibility boundaries rather than silent
+approximations.
 
 The compiler-level denotation and the reason for the separate candidate
 relation are specified in

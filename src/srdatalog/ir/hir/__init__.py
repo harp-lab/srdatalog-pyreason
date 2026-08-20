@@ -68,6 +68,7 @@ def default_pipeline(verbose: bool = False) -> Pipeline:
   from srdatalog.ir.hir.plan import JoinPlannerPass
   from srdatalog.ir.hir.rule_rewrite import (
     ConstantRewritePass,
+    GroupedHeadExpansionPass,
     HeadConstantRewritePass,
     SemiJoinPass,
     WildcardRewritePass,
@@ -76,6 +77,7 @@ def default_pipeline(verbose: bool = False) -> Pipeline:
   from srdatalog.ir.hir.split import TempIndexRegistrationPass, TempRelSynthesisPass
 
   p = Pipeline(verbose=verbose)
+  p.add_rule_rewrite(GroupedHeadExpansionPass())
   p.add_rule_rewrite(WildcardRewritePass())
   p.add_rule_rewrite(ConstantRewritePass())
   p.add_rule_rewrite(HeadConstantRewritePass())
